@@ -137,16 +137,23 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 	// Create a timer and start running it
 	timer := time.NewTimer(randomDuration(r))
 
+	// State -- To add more terms
+	currentTerm := 0
+	var votedFor string
+
 	// Run forever handling inputs from various channels
 	for {
 		select {
 		case <-timer.C:
 			// The timer went off.
 			log.Printf("Timeout")
+
+			//Election
+			currentTerm++
 			for p, c := range peerClients {
 				// Send in parallel so we don't wait for each client.
 				go func(c pb.RaftClient, p string) {
-					ret, err := c.RequestVote(context.Background(), &pb.RequestVoteArgs{Term: 1, CandidateID: id})
+					ret, err := c.RequestVote(context.Background(), &pb.RequestVoteArgs{Term: currentTerm, CandidateID: id})
 					voteResponseChan <- VoteResponse{ret: ret, err: err, peer: p}
 				}(c, p)
 			}
