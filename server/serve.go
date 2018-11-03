@@ -68,6 +68,21 @@ func restartTimer(timer *time.Timer, r *rand.Rand) {
 	timer.Reset(randomDuration(r))
 }
 
+// Restart the heartbeat timer
+func restartHBTimer(timer *time.Timer) {
+	stopped := timer.Stop()
+	// If stopped is false that means someone stopped before us, which could be due to the timer going off before this,
+	// in which case we just drain notifications.
+	if !stopped {
+		// Loop for any queued notifications
+		for len(timer.C) > 0 {
+			<-timer.C
+		}
+
+	}
+	timer.Reset(100 * time.Millisecond)
+}
+
 // Launch a GRPC service for this Raft peer.
 func RunRaftServer(r *Raft, port int) {
 	// Convert port to a string form
@@ -136,6 +151,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 
 	// Create a timer and start running it
 	timer := time.NewTimer(randomDuration(r))
+	heartbeatTimer := time.NewTimer(100 * time.Millisecond)
 
 	// State -- To add more terms
 	currentTerm := 0
@@ -145,8 +161,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 	for {
 		select {
 		case <-timer.C:
-			// The timer went off.
-			log.Printf("Timeout")
+			// The Election timer went off.
+			log.Printf("Election Timeout")
 
 			//Election
 			currentTerm++
@@ -159,6 +175,10 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 			}
 			// This will also take care of any pesky timeouts that happened while processing the operation.
 			restartTimer(timer, r)
+		case <-heartbeatTimer.C:
+
+			// This will also take care of any pesky timeouts that happened while processing the operation.
+			restartHBTimer(heartbeatTimer)
 		case op := <-s.C:
 			// We received an operation from a client
 			// TODO: Figure out if you can actually handle the request here. If not use the Redirect result to send the
