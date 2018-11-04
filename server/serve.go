@@ -151,6 +151,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 
 	// Create a timer and start running it
 	timer := time.NewTimer(randomDuration(r))
+	//To Do: assign this only when leader is elected
 	heartbeatTimer := time.NewTimer(100 * time.Millisecond)
 
 	// State -- To add more terms
@@ -177,7 +178,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 			restartTimer(timer, r)
 		case <-heartbeatTimer.C:
 			//Heartbeats
-			log.Printf("Sending heartbeats")
+			log.Printf("Sending heartbeats from leader:%v in term:%v", id, currentTerm)
 
 			for p, c := range peerClients {
 				// Send in parallel so we don't wait for each client.
