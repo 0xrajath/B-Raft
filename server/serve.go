@@ -154,8 +154,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 	heartbeatTimer := time.NewTimer(100 * time.Millisecond)
 
 	// State -- To add more terms
-	currentTerm := 0
-	var votedFor string
+	var currentTerm int64 //Default is 0
+	//var votedFor string
 
 	// Run forever handling inputs from various channels
 	for {
@@ -176,6 +176,16 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 			// This will also take care of any pesky timeouts that happened while processing the operation.
 			restartTimer(timer, r)
 		case <-heartbeatTimer.C:
+			//Heartbeats
+			log.Printf("Sending heartbeats")
+
+			for p, c := range peerClients {
+				// Send in parallel so we don't wait for each client.
+				go func(c pb.RaftClient, p string) {
+					ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id})
+					appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
+				}(c, p)
+			}
 
 			// This will also take care of any pesky timeouts that happened while processing the operation.
 			restartHBTimer(heartbeatTimer)
