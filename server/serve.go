@@ -118,7 +118,7 @@ func connectToPeer(peer string) (pb.RaftClient, error) {
 }
 
 // The main service loop. All modifications to the KV store are run through here.
-func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
+func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, totNumNodes int) {
 	raft := Raft{AppendChan: make(chan AppendEntriesInput), VoteChan: make(chan VoteInput)}
 	// Start in a Go routine so it doesn't affect us.
 	go RunRaftServer(&raft, port)
@@ -155,6 +155,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 	heartbeatTimer := time.NewTimer(100 * time.Millisecond)
 
 	// State -- To add more terms
+	//log.Printf("Total number of nodes : %v", totNumNodes)
 	var currentTerm int64 //Default is 0
 	votes := 0
 	var votedFor string
@@ -165,7 +166,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 		select {
 		case <-timer.C:
 			// The Election timer went off - Convert to candidate
-			log.Printf("Election Timeout")
+			log.Printf("Election Timeout!! - Convert to Candidate")
 
 			//Election
 			currentTerm++
