@@ -46,6 +46,7 @@ func main() {
 
 	id := fmt.Sprintf("%s:%d", name, raftPort)
 	log.Printf("Starting peer with ID %s", id)
+	log.Printf("Total number of nodes is %v", len(peers)+1)
 
 	// Convert port to a string form
 	portString := fmt.Sprintf(":%d", clientPort)
