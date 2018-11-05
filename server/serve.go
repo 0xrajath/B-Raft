@@ -158,12 +158,13 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 	var currentTerm int64 //Default is 0
 	votes := 0
 	var votedFor string
+	//var currentLeader string
 
 	// Run forever handling inputs from various channels
 	for {
 		select {
 		case <-timer.C:
-			// The Election timer went off.
+			// The Election timer went off - Convert to candidate
 			log.Printf("Election Timeout")
 
 			//Election
@@ -227,12 +228,14 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 					votedFor = vr.arg.CandidateID
 					log.Printf("Voted for %v due to term increase", vr.arg.CandidateID)
 					vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: true} //Voted for Requester
+					restartTimer(timer, r)
 
 				} else { //Current term is equal to Requester term
 					if votedFor == "" { //Then you can vote as you've not voted yet
 						votedFor = vr.arg.CandidateID
 						log.Printf("Voted for %v as I've not yet voted this term", vr.arg.CandidateID)
 						vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: true} //Voted for Requester
+						restartTimer(timer, r)
 					} else { //Reject vote as you've already voted this term
 						log.Printf("Vote request from %v rejected as I've already voted in this term: %v for %v", vr.arg.CandidateID, currentTerm, votedFor)
 						vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
@@ -245,7 +248,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 
 			//vr.response <- pb.RequestVoteRet{Term: 1, VoteGranted: false}
 
-			restartTimer(timer, r)
 		case vr := <-voteResponseChan:
 			// We received a response to a previou vote request.
 			// TODO: Fix this
