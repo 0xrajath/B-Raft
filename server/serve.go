@@ -156,7 +156,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 
 	// State -- To add more terms
 	var currentTerm int64 //Default is 0
-	//var votedFor string
+	votes := 0
+	var votedFor string
 
 	// Run forever handling inputs from various channels
 	for {
@@ -167,6 +168,10 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 
 			//Election
 			currentTerm++
+			log.Printf("Current term increased to %v due to election timeout", currentTerm)
+			votes++       //Votes for itself
+			votedFor = id //Since new term has started and it has voted for itself
+
 			for p, c := range peerClients {
 				// Send in parallel so we don't wait for each client.
 				go func(c pb.RaftClient, p string) {
@@ -200,6 +205,14 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 			// We received an AppendEntries request from a Raft peer
 			// TODO figure out what to do here, what we do is entirely wrong.
 			log.Printf("Received append entry from %v", ae.arg.LeaderID)
+
+			//Might need to fix this logic later
+			if currentTerm < ae.arg.Term {
+				log.Printf("Term incremented. My term: %v. Appender term: %v", currentTerm, ae.arg.Term)
+				currentTerm = ae.arg.Term
+				votedFor = "" //Resetting votedFor as I've not yet voted for anyone in this updated term
+			}
+
 			ae.response <- pb.AppendEntriesRet{Term: 1, Success: true}
 			// This will also take care of any pesky timeouts that happened while processing the operation.
 			restartTimer(timer, r)
@@ -207,7 +220,32 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 			// We received a RequestVote RPC from a raft peer
 			// TODO: Fix this.
 			log.Printf("Received vote request from %v", vr.arg.CandidateID)
-			vr.response <- pb.RequestVoteRet{Term: 1, VoteGranted: false}
+
+			if currentTerm <= vr.arg.Term {
+				if currentTerm < vr.arg.Term { //Current term is less than Requester term
+					currentTerm = vr.arg.Term
+					votedFor = vr.arg.CandidateID
+					log.Printf("Voted for %v due to term increase", vr.arg.CandidateID)
+					vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: true} //Voted for Requester
+
+				} else { //Current term is equal to Requester term
+					if votedFor == "" { //Then you can vote as you've not voted yet
+						votedFor = vr.arg.CandidateID
+						log.Printf("Voted for %v as I've not yet voted this term", vr.arg.CandidateID)
+						vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: true} //Voted for Requester
+					} else { //Reject vote as you've already voted this term
+						log.Printf("Vote request from %v rejected as I've already voted in this term: %v for %v", vr.arg.CandidateID, currentTerm, votedFor)
+						vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
+					}
+				}
+			} else { //Reject vote request
+				log.Printf("Vote request from %v rejected as requester term < my term. My term: %v. Requester term: %v", vr.arg.CandidateID, currentTerm, vr.arg.Term)
+				vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
+			}
+
+			//vr.response <- pb.RequestVoteRet{Term: 1, VoteGranted: false}
+
+			restartTimer(timer, r)
 		case vr := <-voteResponseChan:
 			// We received a response to a previou vote request.
 			// TODO: Fix this
@@ -217,6 +255,11 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int) {
 			} else {
 				log.Printf("Got response to vote request from %v", vr.peer)
 				log.Printf("Peers %s granted %v term %v", vr.peer, vr.ret.VoteGranted, vr.ret.Term)
+
+				// //Vote Granted by peer
+				// if vr.ret.VoteGranted {
+				// 	votes++
+				// }
 			}
 		case ar := <-appendResponseChan:
 			// We received a response to a previous AppendEntries RPC call
