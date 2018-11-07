@@ -191,8 +191,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 	var currentLeader string
 
 	var logs []*pb.Entry
-	var lastApplied int64
+	var lastLogIndex int64
 	var commitIndex int64
+	//var lastApplied int64
 
 	nextIndex := make(map[string]int64)
 	matchIndex := make(map[string]int64)
@@ -234,7 +235,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				// var prevLogTerm int64
 				// var entries []*pb.Entry
 
-				// if lastApplied <= 1 {
+				// if lastLogIndex <= 1 {
 
 				// }else{
 
@@ -259,9 +260,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			// TODO: Figure out if you can actually handle the request here. If not use the Redirect result to send the
 			// client elsewhere.
 			if id == currentLeader {
-				lastApplied++                                                                          //Incrementing latest log index to be applied at
-				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastApplied, Cmd: op.command}) //Appending client command to log
-				//lastApplied = int64(len(logs))
+				lastLogIndex++                                                                          //Incrementing latest log index to be applied at
+				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastLogIndex, Cmd: op.command}) //Appending client command to log
+				//lastLogIndex = int64(len(logs))
 			} else {
 				// TODO: Have to Redirect
 				log.Printf("Have to redirect client request")
@@ -286,23 +287,23 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				currentLeader = ae.arg.LeaderID // Assigning new leader with the higher term
 
 				//Log Replication stuff for follower
-				if lastApplied < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
+				if lastLogIndex < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
 					log.Printf("Follower log length is less than leader log length. Return false to leader")
 					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
-				} else if lastApplied == ae.arg.PrevLogIndex { //Found an index that matches with leader
-					log.Printf("lastApplied index of follower matches with leader")
+				} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
+					log.Printf("lastLogIndex index of follower matches with leader")
 
-					if logs[lastApplied-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+					if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
 						log.Printf("Appending logs from leader. Return true to leader")
 						//Appending logs one by one
 						for _, logEntry := range ae.arg.Entries {
 							logs = append(logs, logEntry)
 						}
 
-						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 					} else { // Terms don't match - Return false to leader
-						log.Printf("Term of lastApplied index of follower doesn't match with respective index term of leader . Return false to leader")
+						log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
 						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 					}
 
@@ -317,7 +318,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							logs = append(logs, logEntry)
 						}
 
-						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 					} else { // Terms don't match - Return false to leader
 						log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
@@ -332,23 +333,23 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				//votes = 0                       //Required??
 
 				//Log Replication stuff for follower
-				if lastApplied < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
+				if lastLogIndex < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
 					log.Printf("Follower log length is less than leader log length. Return false to leader")
 					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
-				} else if lastApplied == ae.arg.PrevLogIndex { //Found an index that matches with leader
-					log.Printf("lastApplied index of follower matches with leader")
+				} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
+					log.Printf("lastLogIndex index of follower matches with leader")
 
-					if logs[lastApplied-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+					if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
 						log.Printf("Appending logs from leader. Return true to leader")
 						//Appending logs one by one
 						for _, logEntry := range ae.arg.Entries {
 							logs = append(logs, logEntry)
 						}
 
-						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 					} else { // Terms don't match - Return false to leader
-						log.Printf("Term of lastApplied index of follower doesn't match with respective index term of leader . Return false to leader")
+						log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
 						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 					}
 
@@ -363,7 +364,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							logs = append(logs, logEntry)
 						}
 
-						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 					} else { // Terms don't match - Return false to leader
 						log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
@@ -447,7 +448,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						currentLeader = id //Assigning self as Leader
 
 						for _, peer := range *peers { //Reinitializing nextIndex and matchIndex Map values after election
-							nextIndex[peer] = lastApplied + 1 //Since initialized to leader last log index + 1
+							nextIndex[peer] = lastLogIndex + 1 //Since initialized to leader last log index + 1
 							matchIndex[peer] = 0
 						}
 
@@ -477,8 +478,18 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					restartTimer(timer, r)
 					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 				} else if currentTerm == ar.ret.Term {
-					//Do something here - I'm guessing log replication happens here.
+					//Log Replication procedures happen here
 					log.Printf("Some log replication I guess") //To change
+
+					if ar.ret.Success {
+						//Do some majority vote for replication and committing
+
+						nextIndex[ar.peer] = lastLogIndex + 1 //Updating nextIndex for the peer that responded with True
+					} else { //Need to decrement nextIndex since
+						log.Printf("Decrementing nextIndex for Leader")
+						nextIndex[ar.peer] = nextIndex[ar.peer] - 1
+					}
+
 				} else { //Receiving Append response for Stale Term
 					log.Printf("Do Nothing. Received append response for stale term. My term: %v. Appender term: %v", currentTerm, ar.ret.Term)
 				}
