@@ -189,6 +189,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 	var votedFor string
 	var currentLeader string
 
+	var logs []*pb.Entry
+	nextIndex := make(map[string]int)
+
 	// Run forever handling inputs from various channels
 	for {
 		select {
@@ -232,6 +235,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			// We received an operation from a client
 			// TODO: Figure out if you can actually handle the request here. If not use the Redirect result to send the
 			// client elsewhere.
+
 			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
 			s.HandleCommand(op)
 		case ae := <-raft.AppendChan:
