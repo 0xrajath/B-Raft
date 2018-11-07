@@ -191,6 +191,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 	var logs []*pb.Entry
 	nextIndex := make(map[string]int)
+	for _, peer := range *peers { //Initializing nextIndex Map values to -1
+		nextIndex[peer] = -1
+	}
 
 	// Run forever handling inputs from various channels
 	for {
@@ -237,7 +240,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			// client elsewhere.
 
 			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
-			s.HandleCommand(op)
+			//s.HandleCommand(op)
 		case ae := <-raft.AppendChan:
 			// We received an AppendEntries request from a Raft peer
 			// TODO figure out what to do here, what we do is entirely wrong.
