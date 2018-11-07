@@ -183,16 +183,22 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 	heartbeatTimer := time.NewTimer(100000 * time.Millisecond)
 
 	//log.Printf("Total number of nodes : %v", totNumNodes)
+
 	// State -- To add more terms
-	var currentTerm int64 //Default is 0
-	var votes int
+	var currentTerm int64
 	var votedFor string
+	var votes int
 	var currentLeader string
 
 	var logs []*pb.Entry
-	nextIndex := make(map[string]int)
-	for _, peer := range *peers { //Initializing nextIndex Map values to -1
+	var lastApplied int64
+	var commitIndex int64
+
+	nextIndex := make(map[string]int64)
+	matchIndex := make(map[string]int64)
+	for _, peer := range *peers { //Initializing nextIndex and matchIndex Map values to -1
 		nextIndex[peer] = -1
+		matchIndex[peer] = -1
 	}
 
 	// Run forever handling inputs from various channels
@@ -223,10 +229,23 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				//Heartbeats
 				log.Printf("Sending heartbeats from leader:%v,%v in term:%v", id, currentLeader, currentTerm)
 
+				// TODO: Consider cases for no logs, 1 log and empty heartbeats!!!!!
+				// var prevLogIndex int64
+				// var prevLogTerm int64
+				// var entries []*pb.Entry
+
+				// if lastApplied <= 1 {
+
+				// }else{
+
+				// }
+
 				for p, c := range peerClients {
+
 					// Send in parallel so we don't wait for each client.
 					go func(c pb.RaftClient, p string) {
-						ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id})
+						//Hopefully the diff of logs is right
+						ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
 						appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
 					}(c, p)
 				}
@@ -236,8 +255,17 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			}
 		case op := <-s.C:
 			// We received an operation from a client
+
 			// TODO: Figure out if you can actually handle the request here. If not use the Redirect result to send the
 			// client elsewhere.
+			if id == currentLeader {
+				lastApplied++                                                                          //Incrementing latest log index to be applied at
+				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastApplied, Cmd: op.command}) //Appending client command to log
+				//lastApplied = int64(len(logs))
+			} else {
+				// TODO: Have to Redirect
+				log.Printf("Have to redirect client request")
+			}
 
 			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
 			//s.HandleCommand(op)
@@ -256,11 +284,93 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 				}
 				currentLeader = ae.arg.LeaderID // Assigning new leader with the higher term
+
+				//Log Replication stuff for follower
+				if lastApplied < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
+					log.Printf("Follower log length is less than leader log length. Return false to leader")
+					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+				} else if lastApplied == ae.arg.PrevLogIndex { //Found an index that matches with leader
+					log.Printf("lastApplied index of follower matches with leader")
+
+					if logs[lastApplied-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+						log.Printf("Appending logs from leader. Return true to leader")
+						//Appending logs one by one
+						for _, logEntry := range ae.arg.Entries {
+							logs = append(logs, logEntry)
+						}
+
+						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+					} else { // Terms don't match - Return false to leader
+						log.Printf("Term of lastApplied index of follower doesn't match with respective index term of leader . Return false to leader")
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+					}
+
+				} else { //Follower log length is greater than leader log length - need to delete some entries of followers
+					if logs[ae.arg.PrevLogIndex-1].Term == ae.arg.PrevLogTerm { //Delete all entries after this for follower and append leader entries
+						log.Printf("Deleting extra logs of follower")
+						logs = logs[:ae.arg.PrevLogIndex]
+
+						log.Printf("Appending logs from leader. Return true to leader")
+						//Appending logs one by one
+						for _, logEntry := range ae.arg.Entries {
+							logs = append(logs, logEntry)
+						}
+
+						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+					} else { // Terms don't match - Return false to leader
+						log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+					}
+				}
+
 				restartTimer(timer, r)
 			} else if currentTerm == ae.arg.Term {
 				log.Printf("Leader is %v for term %v", ae.arg.LeaderID, currentTerm)
 				currentLeader = ae.arg.LeaderID //Assigning leader for whom we voted earlier
 				//votes = 0                       //Required??
+
+				//Log Replication stuff for follower
+				if lastApplied < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
+					log.Printf("Follower log length is less than leader log length. Return false to leader")
+					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+				} else if lastApplied == ae.arg.PrevLogIndex { //Found an index that matches with leader
+					log.Printf("lastApplied index of follower matches with leader")
+
+					if logs[lastApplied-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+						log.Printf("Appending logs from leader. Return true to leader")
+						//Appending logs one by one
+						for _, logEntry := range ae.arg.Entries {
+							logs = append(logs, logEntry)
+						}
+
+						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+					} else { // Terms don't match - Return false to leader
+						log.Printf("Term of lastApplied index of follower doesn't match with respective index term of leader . Return false to leader")
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+					}
+
+				} else { //Follower log length is greater than leader log length - need to delete some entries of followers
+					if logs[ae.arg.PrevLogIndex-1].Term == ae.arg.PrevLogTerm { //Delete all entries after this for follower and append leader entries
+						log.Printf("Deleting extra logs of follower")
+						logs = logs[:ae.arg.PrevLogIndex]
+
+						log.Printf("Appending logs from leader. Return true to leader")
+						//Appending logs one by one
+						for _, logEntry := range ae.arg.Entries {
+							logs = append(logs, logEntry)
+						}
+
+						lastApplied = int64(len(logs)) //Updating lastApplied for follower
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+					} else { // Terms don't match - Return false to leader
+						log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+					}
+				}
+
 				restartTimer(timer, r)
 			} else { //Receiving Stale Term
 				log.Printf("Append request from %v rejected as appender term < my term. My term: %v. Appender term: %v", ae.arg.LeaderID, currentTerm, ae.arg.Term)
@@ -334,7 +444,13 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					if votes > (totNumNodes/2) && currentLeader != id { //Majority vote achieved - Candidate changes to Leader
 						log.Printf("Got Majority vote count of %v among %v nodes", votes, totNumNodes)
 						log.Printf("Converting to Leader from Candidate")
-						currentLeader = id                                      //Assigning self as Leader
+						currentLeader = id //Assigning self as Leader
+
+						for _, peer := range *peers { //Reinitializing nextIndex and matchIndex Map values after election
+							nextIndex[peer] = lastApplied + 1 //Since initialized to leader last log index + 1
+							matchIndex[peer] = 0
+						}
+
 						stopTimer(timer)                                        //Stopping Election timer since it has become leader
 						heartbeatTimer = time.NewTimer(1000 * time.Millisecond) //Starting heartbeatTimer
 					}
