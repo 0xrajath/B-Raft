@@ -230,7 +230,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				//Heartbeats
 				log.Printf("Sending heartbeats from leader:%v,%v in term:%v", id, currentLeader, currentTerm)
 
-				// TODO: Consider cases for no logs, 1 log and empty heartbeats!!!!!
+				// TODO: Consider cases for no logs, 1 log!!!!!
 				// var prevLogIndex int64
 				// var prevLogTerm int64
 				// var entries []*pb.Entry
@@ -242,13 +242,21 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				// }
 
 				for p, c := range peerClients {
-
-					// Send in parallel so we don't wait for each client.
-					go func(c pb.RaftClient, p string) {
-						//Hopefully the diff of logs is right
-						ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
-						appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
-					}(c, p)
+					if lastLogIndex >= nextIndex[p] { //Sending append entries
+						// Send in parallel so we don't wait for each client.
+						go func(c pb.RaftClient, p string) {
+							//Hopefully the diff of logs is right
+							ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
+							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
+						}(c, p)
+					} else { //Sending heartbeats
+						// Send in parallel so we don't wait for each client.
+						go func(c pb.RaftClient, p string) {
+							//Sending empty logs
+							ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, LeaderCommit: commitIndex, Entries: logs[len(logs):]})
+							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
+						}(c, p)
+					}
 				}
 
 				// This will also take care of any pesky timeouts that happened while processing the operation.
@@ -286,43 +294,45 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				}
 				currentLeader = ae.arg.LeaderID // Assigning new leader with the higher term
 
-				//Log Replication stuff for follower
-				if lastLogIndex < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
-					log.Printf("Follower log length is less than leader log length. Return false to leader")
-					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
-				} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
-					log.Printf("lastLogIndex index of follower matches with leader")
+				if len(ae.arg.Entries) > 0 { //These are not heartbeats, i.e, they are actual Append Entries.
+					//Log Replication stuff for follower
+					if lastLogIndex < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
+						log.Printf("Follower log length is less than leader log length. Return false to leader")
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+					} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
+						log.Printf("lastLogIndex index of follower matches with leader")
 
-					if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
-						log.Printf("Appending logs from leader. Return true to leader")
-						//Appending logs one by one
-						for _, logEntry := range ae.arg.Entries {
-							logs = append(logs, logEntry)
+						if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+							log.Printf("Appending logs from leader. Return true to leader")
+							//Appending logs one by one
+							for _, logEntry := range ae.arg.Entries {
+								logs = append(logs, logEntry)
+							}
+
+							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+						} else { // Terms don't match - Return false to leader
+							log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 						}
 
-						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
-					} else { // Terms don't match - Return false to leader
-						log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
-					}
+					} else { //Follower log length is greater than leader log length - need to delete some entries of followers
+						if logs[ae.arg.PrevLogIndex-1].Term == ae.arg.PrevLogTerm { //Delete all entries after this for follower and append leader entries
+							log.Printf("Deleting extra logs of follower")
+							logs = logs[:ae.arg.PrevLogIndex]
 
-				} else { //Follower log length is greater than leader log length - need to delete some entries of followers
-					if logs[ae.arg.PrevLogIndex-1].Term == ae.arg.PrevLogTerm { //Delete all entries after this for follower and append leader entries
-						log.Printf("Deleting extra logs of follower")
-						logs = logs[:ae.arg.PrevLogIndex]
+							log.Printf("Appending logs from leader. Return true to leader")
+							//Appending logs one by one
+							for _, logEntry := range ae.arg.Entries {
+								logs = append(logs, logEntry)
+							}
 
-						log.Printf("Appending logs from leader. Return true to leader")
-						//Appending logs one by one
-						for _, logEntry := range ae.arg.Entries {
-							logs = append(logs, logEntry)
+							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+						} else { // Terms don't match - Return false to leader
+							log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 						}
-
-						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
-					} else { // Terms don't match - Return false to leader
-						log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 					}
 				}
 
@@ -332,43 +342,45 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				currentLeader = ae.arg.LeaderID //Assigning leader for whom we voted earlier
 				//votes = 0                       //Required??
 
-				//Log Replication stuff for follower
-				if lastLogIndex < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
-					log.Printf("Follower log length is less than leader log length. Return false to leader")
-					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
-				} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
-					log.Printf("lastLogIndex index of follower matches with leader")
+				if len(ae.arg.Entries) > 0 { //These are not heartbeats, i.e, they are actual Append Entries.
+					//Log Replication stuff for follower
+					if lastLogIndex < ae.arg.PrevLogIndex { //Follower log length is less than leader log length
+						log.Printf("Follower log length is less than leader log length. Return false to leader")
+						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+					} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
+						log.Printf("lastLogIndex index of follower matches with leader")
 
-					if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
-						log.Printf("Appending logs from leader. Return true to leader")
-						//Appending logs one by one
-						for _, logEntry := range ae.arg.Entries {
-							logs = append(logs, logEntry)
+						if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+							log.Printf("Appending logs from leader. Return true to leader")
+							//Appending logs one by one
+							for _, logEntry := range ae.arg.Entries {
+								logs = append(logs, logEntry)
+							}
+
+							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+						} else { // Terms don't match - Return false to leader
+							log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 						}
 
-						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
-					} else { // Terms don't match - Return false to leader
-						log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
-					}
+					} else { //Follower log length is greater than leader log length - need to delete some entries of followers
+						if logs[ae.arg.PrevLogIndex-1].Term == ae.arg.PrevLogTerm { //Delete all entries after this for follower and append leader entries
+							log.Printf("Deleting extra logs of follower")
+							logs = logs[:ae.arg.PrevLogIndex]
 
-				} else { //Follower log length is greater than leader log length - need to delete some entries of followers
-					if logs[ae.arg.PrevLogIndex-1].Term == ae.arg.PrevLogTerm { //Delete all entries after this for follower and append leader entries
-						log.Printf("Deleting extra logs of follower")
-						logs = logs[:ae.arg.PrevLogIndex]
+							log.Printf("Appending logs from leader. Return true to leader")
+							//Appending logs one by one
+							for _, logEntry := range ae.arg.Entries {
+								logs = append(logs, logEntry)
+							}
 
-						log.Printf("Appending logs from leader. Return true to leader")
-						//Appending logs one by one
-						for _, logEntry := range ae.arg.Entries {
-							logs = append(logs, logEntry)
+							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+						} else { // Terms don't match - Return false to leader
+							log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
+							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 						}
-
-						lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
-					} else { // Terms don't match - Return false to leader
-						log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
-						ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 					}
 				}
 
