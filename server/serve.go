@@ -164,9 +164,10 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 	}
 
 	type AppendResponse struct {
-		ret  *pb.AppendEntriesRet
-		err  error
-		peer string
+		ret         *pb.AppendEntriesRet
+		err         error
+		peer        string
+		isHeartBeat bool
 	}
 
 	type VoteResponse struct {
@@ -247,14 +248,14 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						go func(c pb.RaftClient, p string) {
 							//Hopefully the diff of logs is right
 							ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
-							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
+							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false}
 						}(c, p)
 					} else { //Sending heartbeats
 						// Send in parallel so we don't wait for each client.
 						go func(c pb.RaftClient, p string) {
 							//Sending empty logs
 							ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, LeaderCommit: commitIndex, Entries: logs[len(logs):]})
-							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p}
+							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: true}
 						}(c, p)
 					}
 				}
@@ -290,6 +291,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				votedFor = ""            //Resetting votedFor as I've not yet voted for anyone in this updated term
 				votes = 0                //Resetting my vote count
 				if currentLeader == id { //If I am the leader
+					log.Printf("Stepping down as leader. New leader is %v", ae.arg.LeaderID)
 					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 				}
 				currentLeader = ae.arg.LeaderID // Assigning new leader with the higher term
@@ -334,6 +336,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 						}
 					}
+				} else { //Heartbeats
+					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 				}
 
 				restartTimer(timer, r)
@@ -382,6 +386,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 						}
 					}
+				} else { //Heartbeats
+					ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
 				}
 
 				restartTimer(timer, r)
@@ -404,6 +410,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					votedFor = vr.arg.CandidateID
 					votes = 0                //Reset my own votes incase I was a candidate
 					if currentLeader == id { //If I am the leader
+						log.Printf("Stepping down as leader. New leader is %v", vr.arg.CandidateID)
 						stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 					}
 					log.Printf("Voted for %v due to term increase", vr.arg.CandidateID)
@@ -490,16 +497,20 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					restartTimer(timer, r)
 					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 				} else if currentTerm == ar.ret.Term {
-					//Log Replication procedures happen here
-					log.Printf("Some log replication I guess") //To change
+					//log.Printf("Some log replication I guess") //To change
 
-					if ar.ret.Success {
-						//Do some majority vote for replication and committing
+					if ar.isHeartBeat { //Heartbeat
+						log.Printf("Got response to Heartbeat")
+					} else { //AppendEntries Response
+						//Log Replication procedures happen here
+						if ar.ret.Success {
+							//Do some majority vote for replication and committing
 
-						nextIndex[ar.peer] = lastLogIndex + 1 //Updating nextIndex for the peer that responded with True
-					} else { //Need to decrement nextIndex since
-						log.Printf("Decrementing nextIndex for Leader")
-						nextIndex[ar.peer] = nextIndex[ar.peer] - 1
+							nextIndex[ar.peer] = lastLogIndex + 1 //Updating nextIndex for the peer that responded with True
+						} else { //Need to decrement nextIndex since
+							log.Printf("Decrementing nextIndex for Leader")
+							nextIndex[ar.peer] = nextIndex[ar.peer] - 1
+						}
 					}
 
 				} else { //Receiving Append response for Stale Term
