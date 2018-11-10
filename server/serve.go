@@ -239,13 +239,24 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			votes++       //Votes for itself
 			votedFor = id //Since new term has started and it has voted for itself
 
-			for p, c := range peerClients {
-				// Send in parallel so we don't wait for each client.
-				go func(c pb.RaftClient, p string) {
-					ret, err := c.RequestVote(context.Background(), &pb.RequestVoteArgs{Term: currentTerm, CandidateID: id})
-					voteResponseChan <- VoteResponse{ret: ret, err: err, peer: p}
-				}(c, p)
+			if lastLogIndex == 0 { //Case when no log has been added till now
+				for p, c := range peerClients {
+					// Send in parallel so we don't wait for each client.
+					go func(c pb.RaftClient, p string) {
+						ret, err := c.RequestVote(context.Background(), &pb.RequestVoteArgs{Term: currentTerm, CandidateID: id, LastLogIndex: lastLogIndex})
+						voteResponseChan <- VoteResponse{ret: ret, err: err, peer: p}
+					}(c, p)
+				}
+			} else { //All other cases
+				for p, c := range peerClients {
+					// Send in parallel so we don't wait for each client.
+					go func(c pb.RaftClient, p string) {
+						ret, err := c.RequestVote(context.Background(), &pb.RequestVoteArgs{Term: currentTerm, CandidateID: id, LastLogIndex: lastLogIndex, LasLogTerm: logs[lastLogIndex-1].Term})
+						voteResponseChan <- VoteResponse{ret: ret, err: err, peer: p}
+					}(c, p)
+				}
 			}
+
 			// This will also take care of any pesky timeouts that happened while processing the operation.
 			restartTimer(timer, r)
 		case <-heartbeatTimer.C:
@@ -474,20 +485,56 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			// TODO: Fix this.
 			log.Printf("Received vote request from %v", vr.arg.CandidateID)
 
-			if currentTerm <= vr.arg.Term {
-				if currentTerm < vr.arg.Term { //Current term is less than Requester term
-					currentTerm = vr.arg.Term
-					votedFor = vr.arg.CandidateID
-					votes = 0                //Reset my own votes incase I was a candidate
-					if currentLeader == id { //If I am the leader
-						log.Printf("Stepping down as leader. New leader is %v", vr.arg.CandidateID)
-						stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
-					}
-					log.Printf("Voted for %v due to term increase", vr.arg.CandidateID)
-					vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: true} //Voted for Requester
-					restartTimer(timer, r)
+			if currentTerm < vr.arg.Term { //Current term is less than Requester term
+				log.Printf("My term: %v is less than candidate term: %v", currentTerm, vr.arg.Term)
 
-				} else { //Current term is equal to Requester term
+				currentTerm = vr.arg.Term
+				votes = 0                //Reset my own votes incase I was a candidate
+				if currentLeader == id { //If I am the leader
+					log.Printf("Stepping down as leader")
+					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
+				}
+
+				//log.Printf("Candidate -- LastLogTerm: %v. LastLogIndex: %v",vr.arg.LasLogTerm,vr.arg.LastLogIndex)
+				//log.Printf("Mine -- LastLogTerm: %v. LastLogIndex: %v", logs[lastLogIndex-1].Term, lastLogIndex)
+
+				isCandidateLogUpToDate := false
+				//TODO: Candidate Upto Date Logic for Election Restriction
+				if logs[lastLogIndex-1].Term != vr.arg.LasLogTerm { //Logs with last entries have different terms
+					if vr.arg.LasLogTerm >= logs[lastLogIndex-1].Term {
+						isCandidateLogUpToDate = true
+					} else {
+						isCandidateLogUpToDate = false
+					}
+				} else { //Logs with last entries have same terms
+					if vr.arg.LastLogIndex >= lastLogIndex {
+						isCandidateLogUpToDate = true
+					} else {
+						isCandidateLogUpToDate = false
+					}
+				}
+
+				if isCandidateLogUpToDate { //Candidate log is upto date or it's at the very beginning when my log is empty
+					log.Printf("Candidate log is up-to-date")
+					votedFor = vr.arg.CandidateID
+					log.Printf("Voted for %v due to term increase and candidate log being upto date", vr.arg.CandidateID)
+					vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: true} //Voted for Requester
+				} else { //Candidate log is not upto date
+					log.Printf("Candidate log is not up-to-date")
+					log.Printf("Vote request from %v rejected as candidate log is not upto date", vr.arg.CandidateID)
+					vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
+				}
+
+				restartTimer(timer, r)
+
+			} else if currentTerm == vr.arg.Term { //Current term is equal to Requester term
+				log.Printf("My term: %v is equal to candidate term: %v", currentTerm, vr.arg.Term)
+
+				isCandidateLogUpToDate := false
+				//TODO: Candidate Upto Date Logic for Election Restriction
+
+				if isCandidateLogUpToDate { //Candidate log is upto date
+					log.Printf("Candidate log is up-to-date")
 					if votedFor == "" { //Then you can vote as you've not voted yet
 						votedFor = vr.arg.CandidateID
 						log.Printf("Voted for %v as I've not yet voted this term", vr.arg.CandidateID)
@@ -497,7 +544,12 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						log.Printf("Vote request from %v rejected as I've already voted in this term: %v for %v", vr.arg.CandidateID, currentTerm, votedFor)
 						vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
 					}
+				} else { //Candidate log is not upto date
+					log.Printf("Candidate log is not up-to-date")
+					log.Printf("Vote request from %v rejected as candidate log is not upto date", vr.arg.CandidateID)
+					vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
 				}
+
 			} else { //Reject vote request
 				log.Printf("Vote request from %v rejected as requester term < my term. My term: %v. Requester term: %v", vr.arg.CandidateID, currentTerm, vr.arg.Term)
 				vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
