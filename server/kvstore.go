@@ -126,3 +126,22 @@ func (s *KVStore) HandleCommand(op InputChannelType) {
 		log.Fatalf("Unrecognized operation %v", c)
 	}
 }
+
+func (s *KVStore) HandleCommandFollower(cmd *pb.Command) {
+	switch cmd.Operation {
+	case pb.Op_GET:
+		arg := cmd.GetGet()
+		s.GetInternal(arg.Key)
+	case pb.Op_SET:
+		arg := cmd.GetSet()
+		s.SetInternal(arg.Key, arg.Value)
+	case pb.Op_CLEAR:
+		s.ClearInternal()
+	case pb.Op_CAS:
+		arg := cmd.GetCas()
+		s.CasInternal(arg.Kv.Key, arg.Kv.Value, arg.Value.Value)
+	default:
+		// Sending a blank response to just free things up, but we don't know how to make progress here.
+		log.Fatalf("Unrecognized operation %v", cmd)
+	}
+}

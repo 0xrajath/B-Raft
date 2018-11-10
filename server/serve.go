@@ -225,6 +225,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 		matchIndex[peer] = 0
 	}
 
+	indexToOp := make(map[int64]InputChannelType)
+
 	// Run forever handling inputs from various channels
 	for {
 		select {
@@ -309,7 +311,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				log.Printf("Adding new entry to leader log")                                             //commandName(&op.command)
 				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastLogIndex, Cmd: &op.command}) //Appending client command to log
 				printLogs(logs)
-				//lastLogIndex = int64(len(logs))
+
+				//Adding the op to map -- Might need to check against log to see if it's safe to execute
+				indexToOp[lastLogIndex] = op
 			} else {
 				// TODO: Have to Redirect
 				log.Printf("Have to redirect client request")
