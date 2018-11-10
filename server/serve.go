@@ -267,7 +267,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				for p, c := range peerClients {
 					if lastLogIndex >= nextIndex[p] { //Sending append entries
 
-						if nextIndex[p] == 1 { //When the leaders logs are being created for the very first time from scratch
+						if nextIndex[p] == 1 { //When the leaders logs are being sent for the very first time to peer
 							// Send in parallel so we don't wait for each client.
 							go func(c pb.RaftClient, p string) {
 								//Not sending PrevLogTerm since it will otherwise result in IndexOutOfBoundsError
@@ -500,21 +500,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 				isCandidateLogUpToDate := false
 				//TODO: Candidate Upto Date Logic for Election Restriction
-				if logs[lastLogIndex-1].Term != vr.arg.LasLogTerm { //Logs with last entries have different terms
-					if vr.arg.LasLogTerm >= logs[lastLogIndex-1].Term {
-						isCandidateLogUpToDate = true
-					} else {
+				if lastLogIndex > 0 {
+					if vr.arg.LastLogIndex == 0 { //The case where leader log is empty
 						isCandidateLogUpToDate = false
-					}
-				} else { //Logs with last entries have same terms
-					if vr.arg.LastLogIndex >= lastLogIndex {
-						isCandidateLogUpToDate = true
-					} else {
-						isCandidateLogUpToDate = false
+					} else if logs[lastLogIndex-1].Term != vr.arg.LasLogTerm { //Logs with last entries have different terms
+						if vr.arg.LasLogTerm >= logs[lastLogIndex-1].Term {
+							isCandidateLogUpToDate = true
+						} else {
+							isCandidateLogUpToDate = false
+						}
+					} else { //Logs with last entries have same terms
+						if vr.arg.LastLogIndex >= lastLogIndex {
+							isCandidateLogUpToDate = true
+						} else {
+							isCandidateLogUpToDate = false
+						}
 					}
 				}
 
-				if isCandidateLogUpToDate { //Candidate log is upto date or it's at the very beginning when my log is empty
+				if isCandidateLogUpToDate || lastLogIndex == 0 { //Candidate log is upto date or it's at the very beginning when my log is empty
+					if lastLogIndex == 0 {
+						log.Printf("I have no logs yet")
+					}
+
 					log.Printf("Candidate log is up-to-date")
 					votedFor = vr.arg.CandidateID
 					log.Printf("Voted for %v due to term increase and candidate log being upto date", vr.arg.CandidateID)
@@ -532,8 +540,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 				isCandidateLogUpToDate := false
 				//TODO: Candidate Upto Date Logic for Election Restriction
+				if lastLogIndex > 0 {
+					if vr.arg.LastLogIndex == 0 { //The case where leader log is empty
+						isCandidateLogUpToDate = false
+					} else if logs[lastLogIndex-1].Term != vr.arg.LasLogTerm { //Logs with last entries have different terms
+						if vr.arg.LasLogTerm >= logs[lastLogIndex-1].Term {
+							isCandidateLogUpToDate = true
+						} else {
+							isCandidateLogUpToDate = false
+						}
+					} else { //Logs with last entries have same terms
+						if vr.arg.LastLogIndex >= lastLogIndex {
+							isCandidateLogUpToDate = true
+						} else {
+							isCandidateLogUpToDate = false
+						}
+					}
+				}
 
-				if isCandidateLogUpToDate { //Candidate log is upto date
+				if isCandidateLogUpToDate || lastLogIndex == 0 { //Candidate log is upto date or it's at the very beginning when my log is empty
+					if lastLogIndex == 0 {
+						log.Printf("I have no logs yet")
+					}
+
 					log.Printf("Candidate log is up-to-date")
 					if votedFor == "" { //Then you can vote as you've not voted yet
 						votedFor = vr.arg.CandidateID
