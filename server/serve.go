@@ -220,9 +220,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 	nextIndex := make(map[string]int64)
 	matchIndex := make(map[string]int64)
-	for _, peer := range *peers { //Initializing nextIndex and matchIndex Map values to -1
-		nextIndex[peer] = -1
-		matchIndex[peer] = -1
+	for _, peer := range *peers { //Initializing nextIndex and matchIndex Map values to 0
+		nextIndex[peer] = 1
+		matchIndex[peer] = 0
 	}
 
 	// Run forever handling inputs from various channels
@@ -580,6 +580,11 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						} else { //Need to decrement nextIndex since
 							log.Printf("Decrementing nextIndex for Leader")
 							nextIndex[ar.peer] = nextIndex[ar.peer] - 1
+
+							if nextIndex[ar.peer] < 1 {
+								log.Printf("nextIndex less than 1. Shouldn't have happened. Resetting to 1")
+								nextIndex[ar.peer] = 1
+							}
 						}
 					}
 
