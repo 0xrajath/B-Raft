@@ -231,26 +231,26 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				//Heartbeats
 				log.Printf("Sending heartbeats from leader:%v,%v in term:%v", id, currentLeader, currentTerm)
 
-				// TODO: Consider cases for no logs, 1 log!!!!!
-				// var prevLogIndex int64
-				// var prevLogTerm int64
-				// var entries []*pb.Entry
-
-				// if lastLogIndex <= 1 {
-
-				// }else{
-
-				// }
-
 				for p, c := range peerClients {
 					if lastLogIndex >= nextIndex[p] { //Sending append entries
-						// Send in parallel so we don't wait for each client.
-						go func(c pb.RaftClient, p string) {
-							//Hopefully the diff of logs is right
-							ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
-							appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false}
-						}(c, p)
-					} else { //Sending heartbeats
+
+						if lastLogIndex == 1 { //When only one entry is there in log
+							// Send in parallel so we don't wait for each client.
+							go func(c pb.RaftClient, p string) {
+								//Not sending PrevLogTerm since it will otherwise result in IndexOutOfBoundsError
+								ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
+								appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false}
+							}(c, p)
+						} else {
+							// Send in parallel so we don't wait for each client.
+							go func(c pb.RaftClient, p string) {
+								//Hopefully the diff of logs is right
+								ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
+								appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false}
+							}(c, p)
+						}
+
+					} else { //Sending heartbeats - This includes the case for no log at the very beginning
 						// Send in parallel so we don't wait for each client.
 						go func(c pb.RaftClient, p string) {
 							//Sending empty logs
@@ -269,8 +269,9 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			// TODO: Figure out if you can actually handle the request here. If not use the Redirect result to send the
 			// client elsewhere.
 			if id == currentLeader {
-				lastLogIndex++                                                                          //Incrementing latest log index to be applied at
-				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastLogIndex, Cmd: op.command}) //Appending client command to log
+				lastLogIndex++ //Incrementing latest log index to be applied at
+				log.Printf("Adding new entry to leader log")
+				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastLogIndex, Cmd: &op.command}) //Appending client command to log
 				//lastLogIndex = int64(len(logs))
 			} else {
 				// TODO: Have to Redirect
@@ -304,18 +305,30 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
 						log.Printf("lastLogIndex index of follower matches with leader")
 
-						if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
-							log.Printf("Appending logs from leader. Return true to leader")
-							//Appending logs one by one
+						if ae.arg.PrevLogIndex == 0 { //Case of when first log is added
+							log.Printf("Appending first entry from leader. Return true to leader")
+							//Appending first entry
 							for _, logEntry := range ae.arg.Entries {
 								logs = append(logs, logEntry)
 							}
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
-						} else { // Terms don't match - Return false to leader
-							log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
-							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+
+						} else {
+							if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+								log.Printf("Appending logs from leader. Return true to leader")
+								//Appending logs one by one
+								for _, logEntry := range ae.arg.Entries {
+									logs = append(logs, logEntry)
+								}
+
+								lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
+								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+							} else { // Terms don't match - Return false to leader
+								log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
+								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+							}
 						}
 
 					} else { //Follower log length is greater than leader log length - need to delete some entries of followers
@@ -354,18 +367,30 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					} else if lastLogIndex == ae.arg.PrevLogIndex { //Found an index that matches with leader
 						log.Printf("lastLogIndex index of follower matches with leader")
 
-						if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
-							log.Printf("Appending logs from leader. Return true to leader")
-							//Appending logs one by one
+						if ae.arg.PrevLogIndex == 0 { //Case of when first log is added
+							log.Printf("Appending first entry from leader. Return true to leader")
+							//Appending first entry
 							for _, logEntry := range ae.arg.Entries {
 								logs = append(logs, logEntry)
 							}
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
-						} else { // Terms don't match - Return false to leader
-							log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
-							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+
+						} else {
+							if logs[lastLogIndex-1].Term == ae.arg.PrevLogTerm { //Append logs from leader
+								log.Printf("Appending logs from leader. Return true to leader")
+								//Appending logs one by one
+								for _, logEntry := range ae.arg.Entries {
+									logs = append(logs, logEntry)
+								}
+
+								lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
+								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
+							} else { // Terms don't match - Return false to leader
+								log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
+								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+							}
 						}
 
 					} else { //Follower log length is greater than leader log length - need to delete some entries of followers
@@ -505,7 +530,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						//Log Replication procedures happen here
 						if ar.ret.Success {
 							//Do some majority vote for replication and committing
-
+							log.Printf("Doing some vote count for log replication")
 							nextIndex[ar.peer] = lastLogIndex + 1 //Updating nextIndex for the peer that responded with True
 						} else { //Need to decrement nextIndex since
 							log.Printf("Decrementing nextIndex for Leader")
