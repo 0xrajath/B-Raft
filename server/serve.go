@@ -234,7 +234,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				for p, c := range peerClients {
 					if lastLogIndex >= nextIndex[p] { //Sending append entries
 
-						if lastLogIndex == 1 { //When only one entry is there in log
+						if nextIndex[p] == 1 { //When the leaders logs are being created for the very first time from scratch
 							// Send in parallel so we don't wait for each client.
 							go func(c pb.RaftClient, p string) {
 								//Not sending PrevLogTerm since it will otherwise result in IndexOutOfBoundsError
@@ -279,7 +279,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			}
 
 			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
-			//s.HandleCommand(op)
+			s.HandleCommand(op)
 		case ae := <-raft.AppendChan:
 			// We received an AppendEntries request from a Raft peer
 			// TODO figure out what to do here, what we do is entirely wrong.
@@ -306,7 +306,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						log.Printf("lastLogIndex index of follower matches with leader")
 
 						if ae.arg.PrevLogIndex == 0 { //Case of when first log is added
-							log.Printf("Appending first entry from leader. Return true to leader")
+							log.Printf("Appending first entry/entries from leader. Return true to leader")
 							//Appending first entry
 							for _, logEntry := range ae.arg.Entries {
 								logs = append(logs, logEntry)
@@ -368,7 +368,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						log.Printf("lastLogIndex index of follower matches with leader")
 
 						if ae.arg.PrevLogIndex == 0 { //Case of when first log is added
-							log.Printf("Appending first entry from leader. Return true to leader")
+							log.Printf("Appending first entry/entries from leader. Return true to leader")
 							//Appending first entry
 							for _, logEntry := range ae.arg.Entries {
 								logs = append(logs, logEntry)
