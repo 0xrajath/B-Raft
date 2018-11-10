@@ -145,6 +145,28 @@ func connectToPeer(peer string) (pb.RaftClient, error) {
 	return pb.NewRaftClient(conn), nil
 }
 
+func commandName(cmd *pb.Command) string {
+	switch cmd.Operation {
+	case pb.Op_GET:
+		return ("GET")
+	case pb.Op_SET:
+		return ("SET")
+	case pb.Op_CLEAR:
+		return ("CLEAR")
+	case pb.Op_CAS:
+		return ("CAS")
+	default:
+		return ("Other OP")
+	}
+}
+
+func printLogs(logs []*pb.Entry) {
+	log.Printf("Printing Log")
+	for _, logEntry := range logs {
+		log.Printf(commandName(logEntry.Cmd))
+	}
+}
+
 // The main service loop. All modifications to the KV store are run through here.
 func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, totNumNodes int) {
 	raft := Raft{AppendChan: make(chan AppendEntriesInput), VoteChan: make(chan VoteInput)}
@@ -270,7 +292,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			// client elsewhere.
 			if id == currentLeader {
 				lastLogIndex++ //Incrementing latest log index to be applied at
-				log.Printf("Adding new entry to leader log")
+				log.Printf("Adding new entry to leader log: %v", commandName(&op.command))
 				logs = append(logs, &pb.Entry{Term: currentTerm, Index: lastLogIndex, Cmd: &op.command}) //Appending client command to log
 				//lastLogIndex = int64(len(logs))
 			} else {
