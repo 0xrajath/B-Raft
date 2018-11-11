@@ -852,7 +852,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							//Logic for setting commitIndex on Leader side
 							for n := lastLogIndex; n > 0; n-- {
-								replicationVotes := 0
+								replicationVotes := 1
 								for _, v := range matchIndex {
 									if v >= n {
 										replicationVotes++
