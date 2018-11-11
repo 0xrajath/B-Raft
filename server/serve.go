@@ -317,7 +317,10 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				indexToOp[lastLogIndex] = op
 			} else {
 				// TODO: Have to Redirect
-				log.Printf("Have to redirect client request")
+				log.Printf("Please redirect client request to %v", currentLeader)
+				op.response <- pb.Result{
+					Result: &pb.Result_Redirect{
+						&pb.Redirect{Server: currentLeader}}}
 			}
 
 			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
