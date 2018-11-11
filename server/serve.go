@@ -186,10 +186,11 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 	}
 
 	type AppendResponse struct {
-		ret         *pb.AppendEntriesRet
-		err         error
-		peer        string
-		isHeartBeat bool
+		ret                       *pb.AppendEntriesRet
+		err                       error
+		peer                      string
+		isHeartBeat               bool
+		replicatedLogHighestIndex int64
 	}
 
 	type VoteResponse struct {
@@ -274,14 +275,14 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							go func(c pb.RaftClient, p string) {
 								//Not sending PrevLogTerm since it will otherwise result in IndexOutOfBoundsError
 								ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
-								appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false}
+								appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false, replicatedLogHighestIndex: lastLogIndex}
 							}(c, p)
 						} else {
 							// Send in parallel so we don't wait for each client.
 							go func(c pb.RaftClient, p string) {
 								//Hopefully the diff of logs is right
 								ret, err := c.AppendEntries(context.Background(), &pb.AppendEntriesArgs{Term: currentTerm, LeaderID: id, PrevLogIndex: nextIndex[p] - 1, PrevLogTerm: logs[nextIndex[p]-2].Term, LeaderCommit: commitIndex, Entries: logs[nextIndex[p]-1:]})
-								appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false}
+								appendResponseChan <- AppendResponse{ret: ret, err: err, peer: p, isHeartBeat: false, replicatedLogHighestIndex: lastLogIndex}
 							}(c, p)
 						}
 
@@ -320,7 +321,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			}
 
 			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
-			s.HandleCommand(op)
+			//s.HandleCommand(op)
 		case ae := <-raft.AppendChan:
 			// We received an AppendEntries request from a Raft peer
 			// TODO figure out what to do here, what we do is entirely wrong.
@@ -799,6 +800,11 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							matchIndex[peer] = 0
 						}
 
+						//Clearing out earlier client requests
+						for k := range indexToOp {
+							delete(indexToOp, k)
+						}
+
 						stopTimer(timer)                                        //Stopping Election timer since it has become leader
 						heartbeatTimer = time.NewTimer(1000 * time.Millisecond) //Starting heartbeatTimer
 					}
@@ -834,8 +840,52 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 						if ar.ret.Success {
 							//Do some majority vote for replication and committing
 							log.Printf("Doing some vote count for log replication")
-							nextIndex[ar.peer] = lastLogIndex + 1 //Updating nextIndex for the peer that responded with True
-							matchIndex[ar.peer] = lastLogIndex    //Highest log index know to be replicated on follower
+							nextIndex[ar.peer] = lastLogIndex + 1              //Updating nextIndex for the peer that responded with True
+							matchIndex[ar.peer] = ar.replicatedLogHighestIndex //Highest log index know to be replicated on follower
+
+							for k, v := range matchIndex {
+								log.Printf("MatchIndex : %v for Peer %v", v, k)
+							}
+
+							//Logic for setting commitIndex on Leader side
+							for n := lastLogIndex; n > 0; n-- {
+								replicationVotes := 0
+								for _, v := range matchIndex {
+									if v >= n {
+										replicationVotes++
+									}
+								}
+
+								log.Printf("Replication votes %v for n: %v", replicationVotes, n)
+
+								log.Printf("Term %v for n %v", logs[n-1].Term, n)
+
+								if n > commitIndex && replicationVotes > (totNumNodes/2) && logs[n-1].Term == currentTerm {
+									commitIndex = n
+									break
+								}
+							}
+
+							log.Printf("Leader Commit Index: %v", commitIndex)
+
+							//Applying commands to State Machine for Leader
+							if commitIndex > lastApplied {
+								log.Printf("Applying the following commands to State Machine for Leader")
+								printLogs(logs[lastApplied:commitIndex])
+
+								for _, logEntry := range logs[lastApplied:commitIndex] {
+									op, ok := indexToOp[logEntry.Index]
+
+									if !ok { //Command had come from other earlier leader and not client
+										s.HandleCommandFollower(logEntry.Cmd)
+									} else { //Command is from client
+										s.HandleCommand(op)
+									}
+								}
+
+								log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+								lastApplied = commitIndex
+							}
 
 						} else { //Need to decrement nextIndex since
 							log.Printf("Decrementing nextIndex for Leader")
