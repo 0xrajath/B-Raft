@@ -358,29 +358,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							//Updating Commit Index
-							if ae.arg.LeaderCommit > commitIndex {
-								if ae.arg.LeaderCommit < lastLogIndex {
-									log.Printf("Setting my CommitIndex to Leader CommitIndex")
-									commitIndex = ae.arg.LeaderCommit
-								} else {
-									log.Printf("Setting my CommitIndex to my LastLogIndex")
-									commitIndex = lastLogIndex
-								}
-							}
+							// //Updating Commit Index
+							// if ae.arg.LeaderCommit > commitIndex {
+							// 	if ae.arg.LeaderCommit < lastLogIndex {
+							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
+							// 		commitIndex = ae.arg.LeaderCommit
+							// 	} else {
+							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
+							// 		commitIndex = lastLogIndex
+							// 	}
+							// }
 
-							//Applying commands to State Machine
-							if commitIndex > lastApplied {
-								log.Printf("Applying the following commands to State Machine")
-								printLogs(logs[lastApplied:commitIndex])
+							// //Applying commands to State Machine
+							// if commitIndex > lastApplied {
+							// 	log.Printf("Applying the following commands to State Machine")
+							// 	printLogs(logs[lastApplied:commitIndex])
 
-								for _, logEntry := range logs[lastApplied:commitIndex] {
-									s.HandleCommandFollower(logEntry.Cmd)
-								}
+							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
+							// 		s.HandleCommandFollower(logEntry.Cmd)
+							// 	}
 
-								log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-								lastApplied = commitIndex
-							}
+							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+							// 	lastApplied = commitIndex
+							// }
 
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 
@@ -397,29 +397,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 								lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-								//Updating Commit Index
-								if ae.arg.LeaderCommit > commitIndex {
-									if ae.arg.LeaderCommit < lastLogIndex {
-										log.Printf("Setting my CommitIndex to Leader CommitIndex")
-										commitIndex = ae.arg.LeaderCommit
-									} else {
-										log.Printf("Setting my CommitIndex to my LastLogIndex")
-										commitIndex = lastLogIndex
-									}
-								}
+								// //Updating Commit Index
+								// if ae.arg.LeaderCommit > commitIndex {
+								// 	if ae.arg.LeaderCommit < lastLogIndex {
+								// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
+								// 		commitIndex = ae.arg.LeaderCommit
+								// 	} else {
+								// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
+								// 		commitIndex = lastLogIndex
+								// 	}
+								// }
 
-								//Applying commands to State Machine
-								if commitIndex > lastApplied {
-									log.Printf("Applying the following commands to State Machine")
-									printLogs(logs[lastApplied:commitIndex])
+								// //Applying commands to State Machine
+								// if commitIndex > lastApplied {
+								// 	log.Printf("Applying the following commands to State Machine")
+								// 	printLogs(logs[lastApplied:commitIndex])
 
-									for _, logEntry := range logs[lastApplied:commitIndex] {
-										s.HandleCommandFollower(logEntry.Cmd)
-									}
+								// 	for _, logEntry := range logs[lastApplied:commitIndex] {
+								// 		s.HandleCommandFollower(logEntry.Cmd)
+								// 	}
 
-									log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-									lastApplied = commitIndex
-								}
+								// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+								// 	lastApplied = commitIndex
+								// }
 								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 							} else { // Terms don't match - Return false to leader
 								log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
@@ -444,29 +444,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							//Updating Commit Index
-							if ae.arg.LeaderCommit > commitIndex {
-								if ae.arg.LeaderCommit < lastLogIndex {
-									log.Printf("Setting my CommitIndex to Leader CommitIndex")
-									commitIndex = ae.arg.LeaderCommit
-								} else {
-									log.Printf("Setting my CommitIndex to my LastLogIndex")
-									commitIndex = lastLogIndex
-								}
-							}
+							// //Updating Commit Index
+							// if ae.arg.LeaderCommit > commitIndex {
+							// 	if ae.arg.LeaderCommit < lastLogIndex {
+							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
+							// 		commitIndex = ae.arg.LeaderCommit
+							// 	} else {
+							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
+							// 		commitIndex = lastLogIndex
+							// 	}
+							// }
 
-							//Applying commands to State Machine
-							if commitIndex > lastApplied {
-								log.Printf("Applying the following commands to State Machine")
-								printLogs(logs[lastApplied:commitIndex])
+							// //Applying commands to State Machine
+							// if commitIndex > lastApplied {
+							// 	log.Printf("Applying the following commands to State Machine")
+							// 	printLogs(logs[lastApplied:commitIndex])
 
-								for _, logEntry := range logs[lastApplied:commitIndex] {
-									s.HandleCommandFollower(logEntry.Cmd)
-								}
+							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
+							// 		s.HandleCommandFollower(logEntry.Cmd)
+							// 	}
 
-								log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-								lastApplied = commitIndex
-							}
+							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+							// 	lastApplied = commitIndex
+							// }
 
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 						} else { // Terms don't match - Return false to leader
@@ -504,29 +504,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							//Updating Commit Index
-							if ae.arg.LeaderCommit > commitIndex {
-								if ae.arg.LeaderCommit < lastLogIndex {
-									log.Printf("Setting my CommitIndex to Leader CommitIndex")
-									commitIndex = ae.arg.LeaderCommit
-								} else {
-									log.Printf("Setting my CommitIndex to my LastLogIndex")
-									commitIndex = lastLogIndex
-								}
-							}
+							// //Updating Commit Index
+							// if ae.arg.LeaderCommit > commitIndex {
+							// 	if ae.arg.LeaderCommit < lastLogIndex {
+							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
+							// 		commitIndex = ae.arg.LeaderCommit
+							// 	} else {
+							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
+							// 		commitIndex = lastLogIndex
+							// 	}
+							// }
 
-							//Applying commands to State Machine
-							if commitIndex > lastApplied {
-								log.Printf("Applying the following commands to State Machine")
-								printLogs(logs[lastApplied:commitIndex])
+							// //Applying commands to State Machine
+							// if commitIndex > lastApplied {
+							// 	log.Printf("Applying the following commands to State Machine")
+							// 	printLogs(logs[lastApplied:commitIndex])
 
-								for _, logEntry := range logs[lastApplied:commitIndex] {
-									s.HandleCommandFollower(logEntry.Cmd)
-								}
+							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
+							// 		s.HandleCommandFollower(logEntry.Cmd)
+							// 	}
 
-								log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-								lastApplied = commitIndex
-							}
+							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+							// 	lastApplied = commitIndex
+							// }
 
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 
@@ -543,29 +543,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 								lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-								//Updating Commit Index
-								if ae.arg.LeaderCommit > commitIndex {
-									if ae.arg.LeaderCommit < lastLogIndex {
-										log.Printf("Setting my CommitIndex to Leader CommitIndex")
-										commitIndex = ae.arg.LeaderCommit
-									} else {
-										log.Printf("Setting my CommitIndex to my LastLogIndex")
-										commitIndex = lastLogIndex
-									}
-								}
+								// //Updating Commit Index
+								// if ae.arg.LeaderCommit > commitIndex {
+								// 	if ae.arg.LeaderCommit < lastLogIndex {
+								// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
+								// 		commitIndex = ae.arg.LeaderCommit
+								// 	} else {
+								// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
+								// 		commitIndex = lastLogIndex
+								// 	}
+								// }
 
-								//Applying commands to State Machine
-								if commitIndex > lastApplied {
-									log.Printf("Applying the following commands to State Machine")
-									printLogs(logs[lastApplied:commitIndex])
+								// //Applying commands to State Machine
+								// if commitIndex > lastApplied {
+								// 	log.Printf("Applying the following commands to State Machine")
+								// 	printLogs(logs[lastApplied:commitIndex])
 
-									for _, logEntry := range logs[lastApplied:commitIndex] {
-										s.HandleCommandFollower(logEntry.Cmd)
-									}
+								// 	for _, logEntry := range logs[lastApplied:commitIndex] {
+								// 		s.HandleCommandFollower(logEntry.Cmd)
+								// 	}
 
-									log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-									lastApplied = commitIndex
-								}
+								// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+								// 	lastApplied = commitIndex
+								// }
 
 								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 							} else { // Terms don't match - Return false to leader
@@ -590,29 +590,29 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							//Updating Commit Index
-							if ae.arg.LeaderCommit > commitIndex {
-								if ae.arg.LeaderCommit < lastLogIndex {
-									log.Printf("Setting my CommitIndex to Leader CommitIndex")
-									commitIndex = ae.arg.LeaderCommit
-								} else {
-									log.Printf("Setting my CommitIndex to my LastLogIndex")
-									commitIndex = lastLogIndex
-								}
-							}
+							// //Updating Commit Index
+							// if ae.arg.LeaderCommit > commitIndex {
+							// 	if ae.arg.LeaderCommit < lastLogIndex {
+							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
+							// 		commitIndex = ae.arg.LeaderCommit
+							// 	} else {
+							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
+							// 		commitIndex = lastLogIndex
+							// 	}
+							// }
 
-							//Applying commands to State Machine
-							if commitIndex > lastApplied {
-								log.Printf("Applying the following commands to State Machine")
-								printLogs(logs[lastApplied:commitIndex])
+							// //Applying commands to State Machine
+							// if commitIndex > lastApplied {
+							// 	log.Printf("Applying the following commands to State Machine")
+							// 	printLogs(logs[lastApplied:commitIndex])
 
-								for _, logEntry := range logs[lastApplied:commitIndex] {
-									s.HandleCommandFollower(logEntry.Cmd)
-								}
+							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
+							// 		s.HandleCommandFollower(logEntry.Cmd)
+							// 	}
 
-								log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-								lastApplied = commitIndex
-							}
+							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+							// 	lastApplied = commitIndex
+							// }
 
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 						} else { // Terms don't match - Return false to leader
@@ -628,6 +628,30 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			} else { //Receiving Stale Term
 				log.Printf("Append request from %v rejected as appender term < my term. My term: %v. Appender term: %v", ae.arg.LeaderID, currentTerm, ae.arg.Term)
 				ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: false}
+			}
+
+			//Updating Commit Index
+			if ae.arg.LeaderCommit > commitIndex {
+				if ae.arg.LeaderCommit < lastLogIndex {
+					log.Printf("Setting my CommitIndex to Leader CommitIndex")
+					commitIndex = ae.arg.LeaderCommit
+				} else {
+					log.Printf("Setting my CommitIndex to my LastLogIndex")
+					commitIndex = lastLogIndex
+				}
+			}
+
+			//Applying commands to State Machine
+			if commitIndex > lastApplied {
+				log.Printf("Applying the following commands to State Machine")
+				printLogs(logs[lastApplied:commitIndex])
+
+				for _, logEntry := range logs[lastApplied:commitIndex] {
+					s.HandleCommandFollower(logEntry.Cmd)
+				}
+
+				log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
+				lastApplied = commitIndex
 			}
 
 			//ae.response <- pb.AppendEntriesRet{Term: 1, Success: true}
