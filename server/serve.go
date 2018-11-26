@@ -206,8 +206,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 	// Creating heartbeatTimer - This ensures it's not called before the first election timeout
 	heartbeatTimer := time.NewTimer(100000 * time.Millisecond)
 
-	//log.Printf("Total number of nodes : %v", totNumNodes)
-
 	// State -- To add more terms
 	var currentTerm int64
 	var votedFor string
@@ -302,8 +300,7 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 		case op := <-s.C:
 			// We received an operation from a client
 			log.Printf("Received Client operation")
-			// TODO: Figure out if you can actually handle the request here. If not use the Redirect result to send the
-			// client elsewhere.
+
 			if id == currentLeader {
 				lastLogIndex++ //Incrementing latest log index to be applied at
 
@@ -316,18 +313,14 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				//Adding the op to map -- Might need to check against log to see if it's safe to execute
 				indexToOp[lastLogIndex] = op
 			} else {
-				// TODO: Have to Redirect
 				log.Printf("Please redirect client request to %v", currentLeader)
 				op.response <- pb.Result{
 					Result: &pb.Result_Redirect{
 						&pb.Redirect{Server: currentLeader}}}
 			}
 
-			// TODO: Use Raft to make sure it is safe to actually run the command -- i.e Do HandleCommand only after it's been committed
-			//s.HandleCommand(op)
 		case ae := <-raft.AppendChan:
 			// We received an AppendEntries request from a Raft peer
-			// TODO figure out what to do here, what we do is entirely wrong.
 			log.Printf("Received append entry from %v", ae.arg.LeaderID)
 
 			//Might need to fix this logic later
@@ -362,30 +355,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							// //Updating Commit Index
-							// if ae.arg.LeaderCommit > commitIndex {
-							// 	if ae.arg.LeaderCommit < lastLogIndex {
-							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
-							// 		commitIndex = ae.arg.LeaderCommit
-							// 	} else {
-							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
-							// 		commitIndex = lastLogIndex
-							// 	}
-							// }
-
-							// //Applying commands to State Machine
-							// if commitIndex > lastApplied {
-							// 	log.Printf("Applying the following commands to State Machine")
-							// 	printLogs(logs[lastApplied:commitIndex])
-
-							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
-							// 		s.HandleCommandFollower(logEntry.Cmd)
-							// 	}
-
-							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-							// 	lastApplied = commitIndex
-							// }
-
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 
 						} else {
@@ -401,29 +370,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 								lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-								// //Updating Commit Index
-								// if ae.arg.LeaderCommit > commitIndex {
-								// 	if ae.arg.LeaderCommit < lastLogIndex {
-								// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
-								// 		commitIndex = ae.arg.LeaderCommit
-								// 	} else {
-								// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
-								// 		commitIndex = lastLogIndex
-								// 	}
-								// }
-
-								// //Applying commands to State Machine
-								// if commitIndex > lastApplied {
-								// 	log.Printf("Applying the following commands to State Machine")
-								// 	printLogs(logs[lastApplied:commitIndex])
-
-								// 	for _, logEntry := range logs[lastApplied:commitIndex] {
-								// 		s.HandleCommandFollower(logEntry.Cmd)
-								// 	}
-
-								// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-								// 	lastApplied = commitIndex
-								// }
 								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 							} else { // Terms don't match - Return false to leader
 								log.Printf("Term of lastLogIndex index of follower doesn't match with respective index term of leader . Return false to leader")
@@ -448,30 +394,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							// //Updating Commit Index
-							// if ae.arg.LeaderCommit > commitIndex {
-							// 	if ae.arg.LeaderCommit < lastLogIndex {
-							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
-							// 		commitIndex = ae.arg.LeaderCommit
-							// 	} else {
-							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
-							// 		commitIndex = lastLogIndex
-							// 	}
-							// }
-
-							// //Applying commands to State Machine
-							// if commitIndex > lastApplied {
-							// 	log.Printf("Applying the following commands to State Machine")
-							// 	printLogs(logs[lastApplied:commitIndex])
-
-							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
-							// 		s.HandleCommandFollower(logEntry.Cmd)
-							// 	}
-
-							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-							// 	lastApplied = commitIndex
-							// }
-
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 						} else { // Terms don't match - Return false to leader
 							log.Printf("Term of prevLogIndex of follower doesn't match with respective index term of leader . Return false to leader")
@@ -486,7 +408,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 			} else if currentTerm == ae.arg.Term {
 				log.Printf("Leader is %v for term %v", ae.arg.LeaderID, currentTerm)
 				currentLeader = ae.arg.LeaderID //Assigning leader for whom we voted earlier
-				//votes = 0                       //Required??
 
 				if len(ae.arg.Entries) > 0 { //These are not heartbeats, i.e, they are actual Append Entries.
 					//Log Replication stuff for follower
@@ -508,30 +429,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
 
-							// //Updating Commit Index
-							// if ae.arg.LeaderCommit > commitIndex {
-							// 	if ae.arg.LeaderCommit < lastLogIndex {
-							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
-							// 		commitIndex = ae.arg.LeaderCommit
-							// 	} else {
-							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
-							// 		commitIndex = lastLogIndex
-							// 	}
-							// }
-
-							// //Applying commands to State Machine
-							// if commitIndex > lastApplied {
-							// 	log.Printf("Applying the following commands to State Machine")
-							// 	printLogs(logs[lastApplied:commitIndex])
-
-							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
-							// 		s.HandleCommandFollower(logEntry.Cmd)
-							// 	}
-
-							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-							// 	lastApplied = commitIndex
-							// }
-
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 
 						} else {
@@ -546,30 +443,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 								printLogs(logs)
 
 								lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
-
-								// //Updating Commit Index
-								// if ae.arg.LeaderCommit > commitIndex {
-								// 	if ae.arg.LeaderCommit < lastLogIndex {
-								// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
-								// 		commitIndex = ae.arg.LeaderCommit
-								// 	} else {
-								// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
-								// 		commitIndex = lastLogIndex
-								// 	}
-								// }
-
-								// //Applying commands to State Machine
-								// if commitIndex > lastApplied {
-								// 	log.Printf("Applying the following commands to State Machine")
-								// 	printLogs(logs[lastApplied:commitIndex])
-
-								// 	for _, logEntry := range logs[lastApplied:commitIndex] {
-								// 		s.HandleCommandFollower(logEntry.Cmd)
-								// 	}
-
-								// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-								// 	lastApplied = commitIndex
-								// }
 
 								ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 							} else { // Terms don't match - Return false to leader
@@ -593,30 +466,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 							printLogs(logs)
 
 							lastLogIndex = int64(len(logs)) //Updating lastLogIndex for follower
-
-							// //Updating Commit Index
-							// if ae.arg.LeaderCommit > commitIndex {
-							// 	if ae.arg.LeaderCommit < lastLogIndex {
-							// 		log.Printf("Setting my CommitIndex to Leader CommitIndex")
-							// 		commitIndex = ae.arg.LeaderCommit
-							// 	} else {
-							// 		log.Printf("Setting my CommitIndex to my LastLogIndex")
-							// 		commitIndex = lastLogIndex
-							// 	}
-							// }
-
-							// //Applying commands to State Machine
-							// if commitIndex > lastApplied {
-							// 	log.Printf("Applying the following commands to State Machine")
-							// 	printLogs(logs[lastApplied:commitIndex])
-
-							// 	for _, logEntry := range logs[lastApplied:commitIndex] {
-							// 		s.HandleCommandFollower(logEntry.Cmd)
-							// 	}
-
-							// 	log.Printf("Updating LastApplied %v to CommitIndex %v", lastApplied, commitIndex)
-							// 	lastApplied = commitIndex
-							// }
 
 							ae.response <- pb.AppendEntriesRet{Term: currentTerm, Success: true}
 						} else { // Terms don't match - Return false to leader
@@ -658,12 +507,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				lastApplied = commitIndex
 			}
 
-			//ae.response <- pb.AppendEntriesRet{Term: 1, Success: true}
-			// This will also take care of any pesky timeouts that happened while processing the operation.
-
 		case vr := <-raft.VoteChan:
 			// We received a RequestVote RPC from a raft peer
-			// TODO: Fix this.
 			log.Printf("Received vote request from %v", vr.arg.CandidateID)
 
 			if currentTerm < vr.arg.Term { //Current term is less than Requester term
@@ -675,9 +520,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					log.Printf("Stepping down as leader")
 					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 				}
-
-				//log.Printf("Candidate -- LastLogTerm: %v. LastLogIndex: %v",vr.arg.LasLogTerm,vr.arg.LastLogIndex)
-				//log.Printf("Mine -- LastLogTerm: %v. LastLogIndex: %v", logs[lastLogIndex-1].Term, lastLogIndex)
 
 				isCandidateLogUpToDate := false
 				//TODO: Candidate Upto Date Logic for Election Restriction
@@ -765,11 +607,8 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 				vr.response <- pb.RequestVoteRet{Term: currentTerm, VoteGranted: false}
 			}
 
-			//vr.response <- pb.RequestVoteRet{Term: 1, VoteGranted: false}
-
 		case vr := <-voteResponseChan:
-			// We received a response to a previou vote request.
-			// TODO: Fix this
+			// We received a response to a previous vote request.
 			if vr.err != nil {
 				// Do not do Fatalf here since the peer might be gone but we should survive.
 				log.Printf("Error calling RPC %v", vr.err)
@@ -834,7 +673,6 @@ func serve(s *KVStore, r *rand.Rand, peers *arrayPeers, id string, port int, tot
 					restartTimer(timer, r)
 					stopHBTimer(heartbeatTimer) //Since Leader stepping down to follower
 				} else if currentTerm == ar.ret.Term {
-					//log.Printf("Some log replication I guess") //To change
 
 					if ar.isHeartBeat { //Heartbeat
 						log.Printf("Got response to Heartbeat")
