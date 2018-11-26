@@ -1,6 +1,6 @@
 B-Raft
 ------------------
-A Raft implementation that is Byzantine Fault Tolerant
+A Raft implementation that is Byzantine Fault Tolerant.
 
 The core code itself is in `server`. `client` contains a rather trivial client designed to test the server. For testing one can use
 Kubernetes, for which a script is provided in `launch-tool/launch.py`. Please not that `launch.py` hardcodes a bunch of
